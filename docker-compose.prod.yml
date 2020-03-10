@@ -1,0 +1,133 @@
+version: "3.7"
+
+networks:
+  frontend:
+  backend:
+  web:
+    external: true
+
+volumes:
+  percona:
+  redis:
+
+services:
+  workspace:
+    container_name: acme-production-workspace
+    restart: always
+    build:
+      context: ./docker/workspace
+      args:
+        APP_DEBUG: "false"
+    command: "bash /home/root/docker-entrypoint.sh"
+    tty: true
+    volumes:
+      - .:/var/www:cached
+    networks:
+      - frontend
+      - backend
+    environment:
+      APP_KEY:
+      APP_ENV:
+      DB_HOST:
+      MYSQL_ROOT_PASSWORD:
+      PHP_OPCACHE_ENABLE: 1
+      PHP_XDEBUG_DEFAULT_ENABLE: 0
+      PHP_XDEBUG_REMOTE_HOST: ""
+      PHP_XDEBUG_REMOTE_CONNECT_BACK: 0
+      PHP_XDEBUG_REMOTE_AUTOSTART: 0
+      PHP_XDEBUG_REMOTE_ENABLE: 0
+      PHP_XDEBUG_PROFILER_ENABLE: 0
+
+  nginx:
+    container_name: acme-production-api
+    build: ./docker/nginx
+    restart: always
+    depends_on:
+      - php-fpm
+    volumes:
+      - .:/var/www:cached
+      - ./storage/logs/nginx:/var/log/nginx
+      - ./docker/nginx/sites/:/etc/nginx/sites-available
+    networks:
+      - web
+      - frontend
+      - backend
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=web
+      - traefik.http.routers.acme-api.rule=Host(`app.acme.net`) && (PathPrefix(`/api`) || PathPrefix(`/admin`) || PathPrefix(`/avatars`) || PathPrefix(`/vendor`))
+      - traefik.http.routers.acme-api.tls=true
+      - traefik.http.routers.acme-api.tls.certresolver=letsencrypt
+      - traefik.http.routers.acme-api.entrypoints=https
+
+  php-fpm:
+    container_name: acme-production-php-fpm
+    restart: always
+    build:
+      context: ./docker/php-fpm
+      args:
+        APP_DEBUG: "false"
+    volumes:
+      - ./docker/php-fpm/php.ini:/usr/local/etc/php/php.ini
+      - .:/var/www:cached
+    networks:
+      - backend
+    environment:
+      PHP_OPCACHE_ENABLE: 1
+      PHP_XDEBUG_DEFAULT_ENABLE: 0
+      PHP_XDEBUG_REMOTE_HOST: ""
+      PHP_XDEBUG_REMOTE_CONNECT_BACK: 0
+      PHP_XDEBUG_REMOTE_AUTOSTART: 0
+      PHP_XDEBUG_REMOTE_ENABLE: 0
+      PHP_XDEBUG_PROFILER_ENABLE: 0
+
+  laravel-horizon:
+    container_name: acme-production-queues
+    restart: always
+    build:
+      context: ./docker/laravel-horizon
+      args:
+        APP_DEBUG: "false"
+    volumes:
+      - .:/var/www:cached
+      - ./docker/laravel-horizon/supervisord.d:/etc/supervisord.d
+    networks:
+      - backend
+    environment:
+      PHP_OPCACHE_ENABLE: 1
+      PHP_XDEBUG_DEFAULT_ENABLE: 0
+      PHP_XDEBUG_REMOTE_HOST: ""
+      PHP_XDEBUG_REMOTE_CONNECT_BACK: 0
+      PHP_XDEBUG_REMOTE_AUTOSTART: 0
+      PHP_XDEBUG_REMOTE_ENABLE: 0
+      PHP_XDEBUG_PROFILER_ENABLE: 0
+
+  percona:
+    container_name: acme-production-percona
+    restart: always
+    build:
+      context: ./docker/percona
+      args:
+        DB_USERNAME:
+        DB_PASSWORD:
+        DB_DATABASE:
+    volumes:
+      - percona:/var/lib/mysql
+    networks:
+      - backend
+    ports:
+      - 127.0.0.1:${MYSQL_REMOTE_PORT}:3306
+    environment:
+      MYSQL_ROOT_PASSWORD:
+
+  redis:
+    container_name: acme-production-redis
+    restart: always
+    build:
+      context: ./docker/redis
+      args:
+        REDIS_PASSWORD:
+    volumes:
+      - redis:/data
+    networks:
+      - backend

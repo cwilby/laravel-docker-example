@@ -1,0 +1,96 @@
+version: "3.7"
+
+networks:
+  frontend:
+  backend:
+
+volumes:
+  percona:
+  redis:
+
+services:
+  workspace:
+    container_name: acme-dev-workspace
+    build: ./docker/workspace
+    command: "bash /home/root/docker-entrypoint.sh"
+    tty: true
+    volumes:
+      - .:/var/www:cached
+    networks:
+      - frontend
+      - backend
+    environment:
+      APP_KEY:
+      APP_ENV:
+      DB_HOST:
+      MYSQL_ROOT_PASSWORD:
+
+  nginx:
+    container_name: acme-dev-nginx
+    build: ./docker/nginx
+    depends_on:
+      - php-fpm
+    volumes:
+      - .:/var/www:cached
+      - ./storage/logs/nginx:/var/log/nginx
+      - ./docker/nginx/sites/:/etc/nginx/sites-available
+    networks:
+      - frontend
+      - backend
+    ports:
+      - 127.0.0.1:8000:80
+
+  php-fpm:
+    container_name: acme-dev-php-fpm
+    build: ./docker/php-fpm
+    volumes:
+      - ./docker/php-fpm/php.ini:/usr/local/etc/php/php.ini
+      - .:/var/www:cached
+    networks:
+      - backend
+
+  laravel-horizon:
+    container_name: acme-dev-queues
+    build: ./docker/laravel-horizon
+    volumes:
+      - .:/var/www:cached
+      - ./docker/laravel-horizon/supervisord.d:/etc/supervisord.d
+    networks:
+      - backend
+
+  percona:
+    container_name: acme-dev-percona
+    build:
+      context: ./docker/percona
+      args:
+        DB_USERNAME:
+        DB_PASSWORD:
+        DB_DATABASE:
+    volumes:
+      - percona:/var/lib/mysql
+    networks:
+      - backend
+    ports:
+      - 127.0.0.1:3306:3306
+    environment:
+      MYSQL_ROOT_PASSWORD:
+
+  redis:
+    container_name: acme-dev-redis
+    build:
+      context: ./docker/redis
+      args:
+        REDIS_PASSWORD:
+    volumes:
+      - redis:/data
+    networks:
+      - backend
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: acme-dev-mailhog
+    ports:
+      - 127.0.0.1:1025:1025
+      - 127.0.0.1:8025:8025
+    networks:
+      - backend

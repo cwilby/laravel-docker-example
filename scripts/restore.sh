@@ -1,0 +1,44 @@
+#!/bin/bash
+mkdir -p /home/acme/backups/acme
+
+if [ -z $1 ]; then
+  echo "Specify prod|dev"
+  exit;
+fi
+
+if [ -z $2 ]; then
+  echo "Specify restore directory"
+  exit;
+fi
+
+echo "Restore started"
+pushd $2
+  echo "-- Restore env file"
+  scp acme@backups.acme.net:acme/.env .env
+
+  latest_backup=$(ssh -t acme@backups.acme.net "ls /home/acme/acme/sql | sort -t_ | tail -n1") 2>/dev/null
+  latest_backup=${latest_backup%?}
+  
+  if [ -f "docker/percona/docker-entrypoint-initdb.d/$latest_backup" ]; then
+    echo "-- Backup exists locally, will restore from local copy"
+  else
+    echo "-- Download latest database backup from archive"
+    scp acme@backups.acme.net:acme/sql/${latest_backup} docker/percona/docker-entrypoint-initdb.d/${latest_backup}
+  fi
+
+  if [ "$1" = "prod" ]; then
+    docker-compose -f docker-compose.prod.yml build
+    docker-compose -f docker-compose.prod.yml down -v
+    docker-compose -f docker-compose.prod.yml up -d
+  fi
+  
+  if [ "$1" = "dev" ]; then
+    docker-compose build
+    docker-compose down -v
+    docker-compose up -d
+  fi
+popd
+
+echo "Restore finished"
+echo "Run the following command after app is up and running again"
+echo "rm -rf docker/percona/docker-entrypoint-initdb.d/db-backup-*.sql"
